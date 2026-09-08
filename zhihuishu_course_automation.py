@@ -197,20 +197,25 @@ async def ai_answer_question(page):
         
         logger.info(f"发送给大模型的提示词: {prompt}")
         
-        api_key = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
-        base_url = os.getenv(
-            "DASHSCOPE_BASE_URL",
-            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        api_key = (
+            os.getenv("DEEPSEEK_API_KEY")
+            or os.getenv("DASHSCOPE_API_KEY")
+            or os.getenv("QWEN_API_KEY")
         )
-        model = os.getenv("ANSWER_MODEL", "qwen3.6-plus")
+        base_url = (
+            os.getenv("DEEPSEEK_BASE_URL")
+            or os.getenv("DASHSCOPE_BASE_URL")
+            or "https://api.deepseek.com/v1"
+        )
+        model = os.getenv("ANSWER_MODEL", "deepseek-v4-flash-vision-exp")
         
         if not api_key:
-            logger.warning("未配置 DASHSCOPE_API_KEY（兼容 QWEN_API_KEY），使用默认方式答题（选择第一个选项）")
+            logger.warning("未配置 DEEPSEEK_API_KEY（兼容 DASHSCOPE_API_KEY / QWEN_API_KEY），使用默认方式答题（选择第一个选项）")
             await page.click('div#playTopic-dialog li.topic-item:first-child')
             return
 
         enable_reasoning = os.getenv("ENABLE_REASONING", "false").lower() == "true"
-        logger.info(f"调用 Chat Completions API，模型: {model}，启用思考模式(enable_thinking): {enable_reasoning}")
+        logger.info(f"调用 Chat Completions API，模型: {model}，启用思考模式: {enable_reasoning}")
 
         endpoint = f"{base_url.rstrip('/')}/chat/completions"
         headers = {
@@ -225,8 +230,9 @@ async def ai_answer_question(page):
                     "content": prompt
                 }
             ],
-            "extra_body": {"enable_thinking": enable_reasoning},
         }
+        if enable_reasoning:
+            payload["extra_body"] = {"enable_thinking": True}
 
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(endpoint, headers=headers, json=payload)
@@ -329,13 +335,17 @@ async def zhihuishu_automation():
     
     if use_ai_answer:
         print("已启用大模型自动答题功能")
-        api_key = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
+        api_key = (
+            os.getenv("DEEPSEEK_API_KEY")
+            or os.getenv("DASHSCOPE_API_KEY")
+            or os.getenv("QWEN_API_KEY")
+        )
         if not api_key:
-            print("警告: 未配置DASHSCOPE_API_KEY（兼容QWEN_API_KEY），无法使用大模型答题功能")
-            print("请在.env文件中配置DASHSCOPE_API_KEY，或选择不使用大模型答题")
+            print("警告: 未配置DEEPSEEK_API_KEY（兼容DASHSCOPE_API_KEY / QWEN_API_KEY），无法使用大模型答题功能")
+            print("请在.env文件中配置DEEPSEEK_API_KEY，或选择不使用大模型答题")
             use_ai_answer = False
         else:
-            answer_model = os.getenv("ANSWER_MODEL", "qwen3.5-plus")
+            answer_model = os.getenv("ANSWER_MODEL", "deepseek-v4-flash-vision-exp")
             print(f"已检测到API密钥，答题模型: {answer_model}，大模型答题功能可用")
     else:
         print("未启用大模型自动答题功能，将默认选择第一个选项")
