@@ -26,7 +26,7 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/LUOLIN926/zhihuishu_course_automation.git
+git clone https://github.com/linfish330/zhihuishu_course_automation.git
 cd zhihuishu_course_automation
 
 # 2. 安装依赖
@@ -130,7 +130,7 @@ ANSWER_MODEL="gpt-4o-mini"
 检查 `.env` 中的 API Key 是否正确；登录 [阿里云百炼控制台](https://bailian.console.aliyun.com/) 检查余额。
 
 **Q: 智慧树页面改版导致脚本失效**
-到 [GitHub Issues](https://github.com/LUOLIN926/zhihuishu_course_automation/issues) 反馈。
+到 [GitHub Issues](https://github.com/linfish330/zhihuishu_course_automation/issues) 反馈。
 
 **Q: 如何使用其他模型**
 修改 `.env` 中的 `DASHSCOPE_BASE_URL` 和 `DASHSCOPE_API_KEY` 为对应服务的地址和密钥即可。
