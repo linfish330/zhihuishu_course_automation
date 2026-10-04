@@ -1,8 +1,10 @@
 import asyncio
 from playwright.async_api import async_playwright
 import os
+import re
 from dotenv import load_dotenv, dotenv_values
-load_dotenv()
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+load_dotenv(dotenv_path=_env_path)
 import logging
 import httpx
 
@@ -295,11 +297,22 @@ async def ai_answer_question(page):
 async def zhihuishu_automation():
     """刷课主流程：登录、进入课程、播放未完成视频并处理答题弹窗。"""
     # 优先从 .env 直接读取配置，避免与系统环境变量（如 Windows 上的 USERNAME）冲突
-    config = dotenv_values(".env") if os.path.exists(".env") else {}
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    config = dotenv_values(env_path) if os.path.exists(env_path) else {}
     env_course_name = config.get("COURSE_NAME") or os.getenv("COURSE_NAME")
-    env_password = config.get("PASSWORD") or os.getenv("PASSWORD")
+    env_password = (
+        config.get("ZHIHUISHU_PASSWORD")
+        or config.get("PASSWORD")
+        or os.getenv("ZHIHUISHU_PASSWORD")
+        or os.getenv("PASSWORD")
+    )
     
-    env_username = config.get("USERNAME") or os.getenv("ZHIHUISHU_USERNAME") or os.getenv("ZH_USERNAME")
+    env_username = (
+        config.get("ZHIHUISHU_USERNAME")
+        or config.get("USERNAME")
+        or os.getenv("ZHIHUISHU_USERNAME")
+        or os.getenv("ZH_USERNAME")
+    )
     if not env_username:
         username_fallback = os.getenv("USERNAME")
         if username_fallback:
@@ -316,19 +329,16 @@ async def zhihuishu_automation():
             if username_fallback != system_user:
                 env_username = username_fallback
 
+    course_name = env_course_name or input("请输入要学习的课程名称: ")
+    username = env_username or input("请输入用户名(手机号): ")
+    userPassword = env_password or input("请输入密码: ")
+
     if env_course_name and env_username and env_password:
-        course_name = env_course_name
-        username = env_username
-        userPassword = env_password
         print(f"使用环境变量配置: 课程={course_name}, 用户名={username}")
-    else:
-        course_name = input("请输入要学习的课程名称: ")
-        username = input("请输入用户名(手机号): ")
-        userPassword = input("请输入密码: ")
     
-    env_llm_answer = os.getenv("ENABLE_LLM_ANSWER")
+    env_llm_answer = config.get("ENABLE_LLM_ANSWER") or os.getenv("ENABLE_LLM_ANSWER")
     if env_llm_answer is not None:
-        use_ai_answer = env_llm_answer.lower().strip() in ['true', '1', 'yes', 'y', '是']
+        use_ai_answer = str(env_llm_answer).lower().strip() in ['true', '1', 'yes', 'y', '是']
         print(f"从环境变量读取 LLM 答题配置: {'启用' if use_ai_answer else '禁用'}")
     else:
         use_ai_answer = input("是否使用大模型自动答题？(y/n，默认为n): ").lower().strip() in ['y', 'yes', '是', '']
@@ -375,27 +385,51 @@ async def zhihuishu_automation():
             logger.info("已点击登录按钮")
             
             logger.info("正在等待登录页面出现...")
-            await page.wait_for_selector('input[name="username"]', timeout=10000)
+            user_input_selector = 'input[name="mobile"], input[placeholder*="手机号"], input[name="username"]'
+            await page.wait_for_selector(user_input_selector, timeout=10000)
             logger.info("登录页面已出现")
-            
+
+            # 确保处于“账号登录”标签页
+            try:
+                account_tab = page.locator('.el-tabs__item:has-text("账号登录")').first
+                if await account_tab.count() > 0:
+                    tab_class = await account_tab.get_attribute("class") or ""
+                    if "is-active" not in tab_class:
+                        await account_tab.click()
+                        await asyncio.sleep(0.5)
+            except Exception as tab_err:
+                logger.debug(f"切换账号登录标签提示: {tab_err}")
+
             print("正在输入手机号、密码")
             logger.info("正在输入手机号...")
-            await page.fill('input[name="username"]', username)
+            await page.locator(user_input_selector).first.fill(username)
             logger.info("手机号已输入")
-            
+
             logger.info("正在输入密码...")
-            await page.fill('input[name="password"]', userPassword)
+            pwd_input_selector = 'input[type="password"], input[placeholder*="密码"], input[name="password"]'
+            await page.locator(pwd_input_selector).first.fill(userPassword)
             logger.info("密码已输入")
-            
+
+            # 勾选用户协议与隐私政策（新版智慧树必须勾选才能提交）
+            try:
+                privacy_checkbox = page.locator('.privacy-checkbox input[type="checkbox"], input[type="checkbox"].el-checkbox__original').first
+                if await privacy_checkbox.count() > 0 and not await privacy_checkbox.is_checked():
+                    logger.info("正在勾选用户协议与隐私政策...")
+                    await page.locator('.privacy-checkbox, .privacy label, .el-checkbox').first.click()
+                    logger.info("已勾选用户协议")
+            except Exception as agree_err:
+                logger.debug(f"勾选协议处理异常: {agree_err}")
+
             await asyncio.sleep(0.8)
-            
+
             print("正在点击登录按钮...")
-            await page.click('.wall-sub-btn')
+            login_btn = page.locator('.btn-block__grandient_login, .wall-sub-btn, .login-bottom:has-text("登录"), button:has-text("登录")').first
+            await login_btn.click()
             logger.info("已点击登录按钮")
             logger.info("正在等待页面跳转到学习页面...")
             print("【请接管】请手动完成验证码输入（跳转到课程列表页面会自动进行下一步）")
-            
-            await page.wait_for_url('https://onlineweb.zhihuishu.com/onlinestuh5', timeout=30000)
+
+            await page.wait_for_url(re.compile(r'.*zhihuishu\.com/.*onlinestuh5.*'), timeout=60000)
             print("已跳转到课程列表页面")
             
             await asyncio.sleep(5)
